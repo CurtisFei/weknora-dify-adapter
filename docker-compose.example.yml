@@ -1,0 +1,20 @@
+services:
+  weknora-dify-adapter:
+    build: .
+    image: weknora-dify-adapter
+    restart: unless-stopped
+    environment:
+      WEKNORA_BASE_URL: ${WEKNORA_BASE_URL}
+      WEKNORA_API_KEY: ${WEKNORA_API_KEY}
+      DIFY_ADAPTER_API_KEY: ${DIFY_ADAPTER_API_KEY}
+      WEKNORA_TIMEOUT_SECONDS: ${WEKNORA_TIMEOUT_SECONDS:-15}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PORT: 8000
+    ports:
+      - "${ADAPTER_PORT:-8000}:8000"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+

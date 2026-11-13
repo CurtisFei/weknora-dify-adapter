@@ -1,0 +1,90 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: weknora-dify-adapter
+
+jobs:
+  build:
+    name: Build & Export
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compute image tags
+        shell: bash
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          echo "IMAGE_TAG=sha-${short_sha}" >> "$GITHUB_ENV"
+          echo "TARBALL=${IMAGE_NAME}-sha-${short_sha}.tar" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Export image to tar
+        shell: bash
+        run: |
+          docker save \
+            "$IMAGE_NAME:$IMAGE_TAG" \
+            "$IMAGE_NAME:latest" \
+            --output "$TARBALL"
+          echo "Tarball size: $(du -h "$TARBALL" | cut -f1)"
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}
+          path: ${{ env.TARBALL }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write job summary
+        shell: bash
+        run: |
+          {
+            echo "## Docker image built"
+            echo ""
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Image | \`$IMAGE_NAME:$IMAGE_TAG\` |"
+            echo "| Also tagged | \`$IMAGE_NAME:latest\` |"
+            echo "| Commit | \`${GITHUB_SHA::7}\` |"
+            echo "| Artifact | \`$IMAGE_NAME-$IMAGE_TAG\` ($(du -h "$TARBALL" | cut -f1)) |"
+            echo ""
+            echo "Load it locally with:"
+            echo ""
+            echo '```bash'
+            echo "docker load -i $TARBALL"
+            echo "docker run --rm -p 8000:8000 --env-file .env $IMAGE_NAME:$IMAGE_TAG"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
